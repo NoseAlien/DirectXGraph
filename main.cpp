@@ -189,8 +189,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	UINT64 fenceVal = 0;
 	result = device->CreateFence(fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
 
-
-
 	//ゲームループ
 	while (true)
 	{
@@ -206,7 +204,30 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			break;
 		}
 
-		//DX更新処理
+		//以下DXの画面更新処理
+
+		//バックバッファの番号取得
+		UINT bbIndex = swapChain->GetCurrentBackBufferIndex();
+
+		//リソースバリアで書き込み可能に変更
+		D3D12_RESOURCE_BARRIER barrierDesc{};
+		barrierDesc.Transition.pResource = backBuffers[bbIndex];
+		barrierDesc.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+		barrierDesc.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+		commandList->ResourceBarrier(1, &barrierDesc);
+
+		//描画先の変更
+		D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+		rtvHandle.ptr += bbIndex * device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
+		commandList->OMSetRenderTargets(1, &rtvHandle, false, nullptr);
+
+		//まず画面を背景色で塗り潰す
+		FLOAT clearColor[] = { 0.1,0.25,0.5,0.0 };
+		commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+		//ここに描画コマンドを書き込む
+
+
 
 	}
 
