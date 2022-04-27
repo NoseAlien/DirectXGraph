@@ -15,9 +15,61 @@
 #pragma comment(lib,"dinput8.lib")
 #pragma comment(lib,"dxguid.lib")
 
-
-
 using namespace DirectX;
+
+///<summary>
+///頂点バッファビューを作成する処理を一括で行う
+///</summary>
+D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<XMFLOAT3> vertices,ID3D12Device* device, HRESULT result)
+{
+	//頂点データ全体のサイズ = 一つの頂点データのサイズ * 頂点データの要素数
+	UINT sizeVB = static_cast<UINT>(sizeof(XMFLOAT3) * vertices.size());
+	//頂点バッファの設定
+	D3D12_HEAP_PROPERTIES heapProp{};
+	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
+	//リソース設定
+	D3D12_RESOURCE_DESC resDesc{};
+	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	resDesc.Width = sizeVB;
+	resDesc.Height = 1;
+	resDesc.DepthOrArraySize = 1;
+	resDesc.MipLevels = 1;
+	resDesc.SampleDesc.Count = 1;
+	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	//頂点バッファの生成
+	ID3D12Resource* vertBuff = nullptr;
+	result = device->CreateCommittedResource(
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&vertBuff));
+	assert(SUCCEEDED(result));
+
+	//GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得
+	XMFLOAT3* vertMap = nullptr;
+	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
+	assert(SUCCEEDED(result));
+	//全頂点に対し座標をコピー
+	for (int i = 0; i < vertices.size(); i++)
+	{
+		vertMap[i] = vertices[i];
+	}
+	//つながりを削除
+	vertBuff->Unmap(0, nullptr);
+
+	//頂点バッファビューの作成
+	D3D12_VERTEX_BUFFER_VIEW vbView{};
+	//GPU仮想アドレス
+	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
+	//頂点バッファのサイズ
+	vbView.SizeInBytes = sizeVB;
+	//頂点一つ分のデータサイズ
+	vbView.StrideInBytes = sizeof(XMFLOAT3);
+
+	return vbView;
+}
 
 LRESULT windowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -223,57 +275,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = device->CreateFence(fenceVal, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
 
 	//描画初期化処理
-	XMFLOAT3 vertices[] = {
+	//三角形
+	std::vector<XMFLOAT3> vertices = {
 		{-0.5f,-0.5f,0.0f},
 		{-0.5f,0.5f,0.0f},
 		{0.5f,-0.5f,0.0f},
 	};
-	//頂点データ全体のサイズ = 一つの頂点データのサイズ * 頂点データの要素数
-	UINT sizeVB = static_cast<UINT>(sizeof(XMFLOAT3) * _countof(vertices));
 
-	//頂点バッファの設定
-	D3D12_HEAP_PROPERTIES heapProp{};
-	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
-	//リソース設定
-	D3D12_RESOURCE_DESC resDesc{};
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resDesc.Width = sizeVB;
-	resDesc.Height = 1;
-	resDesc.DepthOrArraySize = 1;
-	resDesc.MipLevels = 1;
-	resDesc.SampleDesc.Count = 1;
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	//頂点バッファの生成
-	ID3D12Resource* vertBuff = nullptr;
-	result = device->CreateCommittedResource(
-		&heapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&resDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&vertBuff));
-	assert(SUCCEEDED(result));
+	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(vertices, device, result) };
 
-	//GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得
-	XMFLOAT3* vertMap = nullptr;
-	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
-	assert(SUCCEEDED(result));
-	//全頂点に対し座標をコピー
-	for (int i = 0; i < _countof(vertices); i++)
-	{
-		vertMap[i] = vertices[i];
-	}
-	//つながりを削除
-	vertBuff->Unmap(0, nullptr);
+	//四角形を描画するための逆向き三角形
+	std::vector<XMFLOAT3> rectVertices = {
+		{0.5f,0.5f,0.0f},
+		{-0.5f,0.5f,0.0f},
+		{0.5f,-0.5f,0.0f},
+	};
 
-	//頂点バッファビューの作成
-	D3D12_VERTEX_BUFFER_VIEW vbView{};
-	//GPU仮想アドレス
-	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
-	//頂点バッファのサイズ
-	vbView.SizeInBytes = sizeVB;
-	//頂点一つ分のデータサイズ
-	vbView.StrideInBytes = sizeof(XMFLOAT3);
+	D3D12_VERTEX_BUFFER_VIEW RectVbView{ CreateVertexBufferView(rectVertices, device, result) };
 
 	ID3DBlob* vsBlob = nullptr;
 	ID3DBlob* psBlob = nullptr;
@@ -399,6 +417,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&pipelineState));
 	assert(SUCCEEDED(result));
 
+	pipelineDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+
+	// パイプランステートの生成
+	ID3D12PipelineState* wirePipelineState = nullptr;
+	result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&wirePipelineState));
+	assert(SUCCEEDED(result));
+
+	bool rectDraw = false;
+	bool wireDraw = false;
+
+	//キーボード情報の取得開始
+	keyboard->Acquire();
+
+	//全キーの入力状態を入れる変数
+	BYTE key[256] = {};
+
+	//前のフレームの入力状態を入れる変数
+	BYTE prevKey[256] = {};
+
 	//ゲームループ
 	while (true)
 	{
@@ -414,11 +451,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			break;
 		}
 
-		//キーボード情報の取得開始
-		keyboard->Acquire();
+		//前のフレームの入力状態を取得する
+		for (int i = 0; i < sizeof(key) / sizeof(*key); i++)
+		{
+			prevKey[i] = key[i];
+		}
 
 		//全キーの入力状態を取得する
-		BYTE key[256] = {};
 		keyboard->GetDeviceState(sizeof(key), key);
 
 		//数字の0キーが押されていたら出力ウィンドウに「Hit 0」と表示
@@ -435,6 +474,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			clearColor[1] = 0.1f;
 			clearColor[2] = 0.25f;
 			clearColor[3] = 0.0f;
+		}
+
+		if (key[DIK_1] && !prevKey[DIK_1])
+		{
+			rectDraw = !rectDraw;
+		}
+
+		if (key[DIK_2] && !prevKey[DIK_2])
+		{
+			wireDraw = !wireDraw;
 		}
 
 		//DXの画面更新処理
@@ -460,37 +509,78 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		//ここから描画コマンドを書き込む
 
 		// ビューポート設定コマンド
-		D3D12_VIEWPORT viewport{};
-		viewport.Width = window_width;
-		viewport.Height = window_height;
-		viewport.TopLeftX = 0;
-		viewport.TopLeftY = 0;
-		viewport.MinDepth = 0.0f;
-		viewport.MaxDepth = 1.0f;
-		// ビューポート設定コマンドを、コマンドリストに積む
-		commandList->RSSetViewports(1, &viewport);
+		D3D12_VIEWPORT viewport[4]{};
+		viewport[0].Width = window_width / 1.5;
+		viewport[0].Height = window_height / 1.5;
+		viewport[0].TopLeftX = 0;
+		viewport[0].TopLeftY = 0;
+		viewport[0].MinDepth = 0.0f;
+		viewport[0].MaxDepth = 1.0f;
 
-		// シザー矩形
-		D3D12_RECT scissorRect{};
-		scissorRect.left = 0; // 切り抜き座標左
-		scissorRect.right = scissorRect.left + window_width; // 切り抜き座標右
-		scissorRect.top = 0; // 切り抜き座標上
-		scissorRect.bottom = scissorRect.top + window_height; // 切り抜き座標下
-		// シザー矩形設定コマンドを、コマンドリストに積む
-		commandList->RSSetScissorRects(1, &scissorRect);
+		viewport[1].Width = window_width / 3;
+		viewport[1].Height = window_height / 1.5;
+		viewport[1].TopLeftX = window_width / 1.5;
+		viewport[1].TopLeftY = 0;
+		viewport[1].MinDepth = 0.0f;
+		viewport[1].MaxDepth = 1.0f;
 
-		// パイプラインステートとルートシグネチャの設定コマンド
-		commandList->SetPipelineState(pipelineState);
-		commandList->SetGraphicsRootSignature(rootSignature);
+		viewport[2].Width = window_width / 1.5;
+		viewport[2].Height = window_height / 3;
+		viewport[2].TopLeftX = 0;
+		viewport[2].TopLeftY = window_height / 1.5;
+		viewport[2].MinDepth = 0.0f;
+		viewport[2].MaxDepth = 1.0f;
 
-		// プリミティブ形状の設定コマンド
-		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
+		viewport[3].Width = window_width / 3;
+		viewport[3].Height = window_height / 3;
+		viewport[3].TopLeftX = window_width / 1.5;
+		viewport[3].TopLeftY = window_height / 1.5;
+		viewport[3].MinDepth = 0.0f;
+		viewport[3].MaxDepth = 1.0f;
 
-		// 頂点バッファビューの設定コマンド
-		commandList->IASetVertexBuffers(0, 1, &vbView);
+		for (int i = 0; i < sizeof(viewport) / sizeof(*viewport); i++)
+		{
+			// ビューポート設定コマンドを、コマンドリストに積む
+			commandList->RSSetViewports(1, &viewport[i]);
 
-		// 描画コマンド
-		commandList->DrawInstanced(_countof(vertices), 1, 0, 0); // 全ての頂点を使って描画
+			// シザー矩形
+			D3D12_RECT scissorRect{};
+			scissorRect.left = 0; // 切り抜き座標左
+			scissorRect.right = scissorRect.left + window_width; // 切り抜き座標右
+			scissorRect.top = 0; // 切り抜き座標上
+			scissorRect.bottom = scissorRect.top + window_height; // 切り抜き座標下
+			// シザー矩形設定コマンドを、コマンドリストに積む
+			commandList->RSSetScissorRects(1, &scissorRect);
+
+			// パイプラインステートとルートシグネチャの設定コマンド
+			if (wireDraw)
+			{
+				commandList->SetPipelineState(wirePipelineState);
+			}
+			else
+			{
+				commandList->SetPipelineState(pipelineState);
+			}
+			commandList->SetGraphicsRootSignature(rootSignature);
+
+			// プリミティブ形状の設定コマンド
+			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
+
+			// 頂点バッファビューの設定コマンド
+			commandList->IASetVertexBuffers(0, 1, &vbView);
+
+			// 描画コマンド
+			commandList->DrawInstanced(vertices.size(), 1, 0, 0); // 全ての頂点を使って描画	
+
+			if (rectDraw)
+			{
+				// 頂点バッファビューの設定コマンド
+				commandList->IASetVertexBuffers(0, 1, &RectVbView);
+
+				// 描画コマンド
+				commandList->DrawInstanced(vertices.size(), 1, 0, 0); // 全ての頂点を使って描画	
+			}
+		}
 
 		//ここまで描画コマンドを書き込む
 
