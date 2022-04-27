@@ -380,8 +380,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	pipelineDesc.RasterizerState.DepthClipEnable = true;
 
 	//ブレンドステート
-	pipelineDesc.BlendState.RenderTarget[0].RenderTargetWriteMask
-		= D3D12_COLOR_WRITE_ENABLE_ALL;
+	//pipelineDesc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	//レンダーターゲットのブレンド設定
+	D3D12_RENDER_TARGET_BLEND_DESC& blenddesc = pipelineDesc.BlendState.RenderTarget[0];
+	blenddesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+	blenddesc.BlendEnable = true;
+	blenddesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	blenddesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+	blenddesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+
+	blenddesc.BlendOp = D3D12_BLEND_OP_ADD;
+	blenddesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	blenddesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
 
 	//頂点レイアウトの設定
 	pipelineDesc.InputLayout.pInputElementDescs = inputLayout;
@@ -416,16 +426,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	ID3D12PipelineState* pipelineState = nullptr;
 	result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&pipelineState));
 	assert(SUCCEEDED(result));
-
-	pipelineDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-
-	// パイプランステートの生成
-	ID3D12PipelineState* wirePipelineState = nullptr;
-	result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&wirePipelineState));
-	assert(SUCCEEDED(result));
-
-	bool rectDraw = false;
-	bool wireDraw = false;
 
 	//キーボード情報の取得開始
 	keyboard->Acquire();
@@ -476,16 +476,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			clearColor[3] = 0.0f;
 		}
 
-		if (key[DIK_1] && !prevKey[DIK_1])
-		{
-			rectDraw = !rectDraw;
-		}
-
-		if (key[DIK_2] && !prevKey[DIK_2])
-		{
-			wireDraw = !wireDraw;
-		}
-
 		//DXの画面更新処理
 
 		//バックバッファの番号取得
@@ -509,78 +499,38 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		//ここから描画コマンドを書き込む
 
 		// ビューポート設定コマンド
-		D3D12_VIEWPORT viewport[4]{};
-		viewport[0].Width = window_width / 1.5;
-		viewport[0].Height = window_height / 1.5;
-		viewport[0].TopLeftX = 0;
-		viewport[0].TopLeftY = 0;
-		viewport[0].MinDepth = 0.0f;
-		viewport[0].MaxDepth = 1.0f;
+		D3D12_VIEWPORT viewport{};
+		viewport.Width = window_width;
+		viewport.Height = window_height;
+		viewport.TopLeftX = 0;
+		viewport.TopLeftY = 0;
+		viewport.MinDepth = 0.0f;
+		viewport.MaxDepth = 1.0f;
 
-		viewport[1].Width = window_width / 3;
-		viewport[1].Height = window_height / 1.5;
-		viewport[1].TopLeftX = window_width / 1.5;
-		viewport[1].TopLeftY = 0;
-		viewport[1].MinDepth = 0.0f;
-		viewport[1].MaxDepth = 1.0f;
+		// ビューポート設定コマンドを、コマンドリストに積む
+		commandList->RSSetViewports(1, &viewport);
 
-		viewport[2].Width = window_width / 1.5;
-		viewport[2].Height = window_height / 3;
-		viewport[2].TopLeftX = 0;
-		viewport[2].TopLeftY = window_height / 1.5;
-		viewport[2].MinDepth = 0.0f;
-		viewport[2].MaxDepth = 1.0f;
+		// シザー矩形
+		D3D12_RECT scissorRect{};
+		scissorRect.left = 0; // 切り抜き座標左
+		scissorRect.right = scissorRect.left + window_width; // 切り抜き座標右
+		scissorRect.top = 0; // 切り抜き座標上
+		scissorRect.bottom = scissorRect.top + window_height; // 切り抜き座標下
+		// シザー矩形設定コマンドを、コマンドリストに積む
+		commandList->RSSetScissorRects(1, &scissorRect);
 
-		viewport[3].Width = window_width / 3;
-		viewport[3].Height = window_height / 3;
-		viewport[3].TopLeftX = window_width / 1.5;
-		viewport[3].TopLeftY = window_height / 1.5;
-		viewport[3].MinDepth = 0.0f;
-		viewport[3].MaxDepth = 1.0f;
+		// パイプラインステートとルートシグネチャの設定コマンド
+		commandList->SetPipelineState(pipelineState);
+		commandList->SetGraphicsRootSignature(rootSignature);
 
-		for (int i = 0; i < sizeof(viewport) / sizeof(*viewport); i++)
-		{
-			// ビューポート設定コマンドを、コマンドリストに積む
-			commandList->RSSetViewports(1, &viewport[i]);
+		// プリミティブ形状の設定コマンド
+		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
 
-			// シザー矩形
-			D3D12_RECT scissorRect{};
-			scissorRect.left = 0; // 切り抜き座標左
-			scissorRect.right = scissorRect.left + window_width; // 切り抜き座標右
-			scissorRect.top = 0; // 切り抜き座標上
-			scissorRect.bottom = scissorRect.top + window_height; // 切り抜き座標下
-			// シザー矩形設定コマンドを、コマンドリストに積む
-			commandList->RSSetScissorRects(1, &scissorRect);
+		// 頂点バッファビューの設定コマンド
+		commandList->IASetVertexBuffers(0, 1, &vbView);
 
-			// パイプラインステートとルートシグネチャの設定コマンド
-			if (wireDraw)
-			{
-				commandList->SetPipelineState(wirePipelineState);
-			}
-			else
-			{
-				commandList->SetPipelineState(pipelineState);
-			}
-			commandList->SetGraphicsRootSignature(rootSignature);
-
-			// プリミティブ形状の設定コマンド
-			commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
-
-			// 頂点バッファビューの設定コマンド
-			commandList->IASetVertexBuffers(0, 1, &vbView);
-
-			// 描画コマンド
-			commandList->DrawInstanced(vertices.size(), 1, 0, 0); // 全ての頂点を使って描画	
-
-			if (rectDraw)
-			{
-				// 頂点バッファビューの設定コマンド
-				commandList->IASetVertexBuffers(0, 1, &RectVbView);
-
-				// 描画コマンド
-				commandList->DrawInstanced(vertices.size(), 1, 0, 0); // 全ての頂点を使って描画	
-			}
-		}
+		// 描画コマンド
+		commandList->DrawInstanced(vertices.size(), 1, 0, 0); // 全ての頂点を使って描画	
 
 		//ここまで描画コマンドを書き込む
 
