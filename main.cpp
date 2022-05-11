@@ -308,7 +308,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = constBuffMaterial->Map(0, nullptr, (void**)&constMapMaterial);//マッピング
 	assert(SUCCEEDED(result));
 	//値を書き込むと自動的に転送される
-	constMapMaterial->color = XMFLOAT4(1, 0, 0, 0.5f);
+	constMapMaterial->color = XMFLOAT4(1, 1, 1, 1);
 
 	//ルートパラメーターの設定
 	D3D12_ROOT_PARAMETER rootParam = {};
@@ -319,22 +319,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	
 	//三角形
 	std::vector<XMFLOAT3> vertices = {
-		{-0.5f,-0.5f,0.0f},
-		{-0.5f,0.5f,0.0f},
-		{0.5f,-0.5f,0.0f},
-	};
-
-	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(vertices, device, result) };
-
-	//四角形を描画するための逆向き三角形
-	std::vector<XMFLOAT3> rectVertices = {
-		{0.5f,0.5f,0.0f},
-		{-0.5f,0.5f,0.0f},
-		{0.5f,-0.5f,0.0f},
+		{-0.5f,-0.5f,0.0f},//左下
+		{0.5f,-0.5f,0.0f},//右下
+		{-0.5f,0.0f,0.0f},//左中
+		{0.5f,0.0f,0.0f},//右中
+		{-0.5f,0.5f,0.0f},//左上
+		{0.5f,0.5f,0.0f},//右上
 	};
 
 	//頂点バッファビュー作成
-	D3D12_VERTEX_BUFFER_VIEW RectVbView{ CreateVertexBufferView(rectVertices, device, result) };
+	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(vertices, device, result) };
 
 	ID3DBlob* vsBlob = nullptr;
 	ID3DBlob* psBlob = nullptr;
@@ -564,15 +558,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		// シザー矩形設定コマンドを、コマンドリストに積む
 		commandList->RSSetScissorRects(1, &scissorRect);
 
-		//バッファの値を徐々に変える
-		constMapMaterial->color = XMFLOAT4(constMapMaterial->color.x - 0.001f, constMapMaterial->color.y + 0.001f, 0, 0.5f);
-
 		// パイプラインステートとルートシグネチャの設定コマンド
 		commandList->SetPipelineState(pipelineState);
 		commandList->SetGraphicsRootSignature(rootSignature);
 
 		// プリミティブ形状の設定コマンド
-		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
+		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP); // 三角形リスト
 
 		// 頂点バッファビューの設定コマンド
 		commandList->IASetVertexBuffers(0, 1, &vbView);
