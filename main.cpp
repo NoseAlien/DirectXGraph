@@ -7,7 +7,9 @@
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 #define DIRECTINPUT_VERSION 0x0800
-#include <dinput.h>
+#include "ADXKeyBoardInput.h"
+#include "ADXModel.h"
+#include "ADXWindow.h"
 
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib,"d3d12.lib")
@@ -23,17 +25,10 @@ struct ConstBufferDataMaterial {
 	XMFLOAT4 color;
 };
 
-//頂点データ構造体
-struct Vertex
-{
-	XMFLOAT3 pos;
-	XMFLOAT2 uv;
-};
-
 ///<summary>
 ///頂点バッファビューを作成する処理を一括で行う
 ///</summary>
-D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<Vertex> vertices,ID3D12Device* device, HRESULT result)
+D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<ADXModel::Vertex> vertices,ID3D12Device* device, HRESULT& result)
 {
 	//頂点データ全体のサイズ = 一つの頂点データのサイズ * 頂点データの要素数
 	UINT sizeVB = static_cast<UINT>(sizeof(vertices[0]) * vertices.size());
@@ -61,7 +56,7 @@ D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<Vertex> vertices,ID3
 	assert(SUCCEEDED(result));
 
 	//GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得
-	Vertex* vertMap = nullptr;
+	ADXModel::Vertex* vertMap = nullptr;
 	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
 	assert(SUCCEEDED(result));
 	//全頂点に対し座標をコピー
@@ -84,7 +79,10 @@ D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<Vertex> vertices,ID3
 	return vbView;
 }
 
-D3D12_INDEX_BUFFER_VIEW CreateIndexBufferView(std::vector<uint16_t> indices, ID3D12Device* device, HRESULT result)
+///<summary>
+///インデックスバッファビューを作成する処理を一括で行う
+///</summary>
+D3D12_INDEX_BUFFER_VIEW CreateIndexBufferView(std::vector<uint16_t> indices, ID3D12Device* device, HRESULT& result)
 {
 	//インデックスデータ全体のサイズ
 	UINT sizeIB = static_cast<UINT>(sizeof(uint16_t) * indices.size());
@@ -147,34 +145,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	//WinAPI初期化処理
 	const int window_width = 1280;
 	const int window_height = 720;
+	
+	//ウィンドウ生成
+	ADXWindow adxwindow(window_width, window_height,
+		L"DirectXGame", (WNDPROC)windowProc);
 
-	WNDCLASSEX w{};
-	w.cbSize = sizeof(WNDCLASSEX);
-	w.lpfnWndProc = (WNDPROC)windowProc;
-	w.lpszClassName = L"DirectXGame";
-	w.hInstance = GetModuleHandle(nullptr);
-	w.hCursor = LoadCursor(NULL, IDC_ARROW);
-
-	RegisterClassEx(&w);
-
-	RECT wrc = { 0,0,window_width,window_height };
-
-	AdjustWindowRect(&wrc, WS_OVERLAPPEDWINDOW, false);
-
-	HWND hwnd = CreateWindow(w.lpszClassName,
-		L"DirectXGame",
-		WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT,
-		CW_USEDEFAULT,
-		wrc.right - wrc.left,
-		wrc.bottom - wrc.top,
-		nullptr,
-		nullptr,
-		w.hInstance,
-		nullptr);
-
-	ShowWindow(hwnd, SW_SHOW);
-
+	//メッセージ
 	MSG msg{};
 
 #ifdef _DEBUG
@@ -199,23 +175,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	//DirectInputの初期化
 	IDirectInput8* directInput = nullptr;
 	result = DirectInput8Create(
-		w.hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
+		adxwindow.w.hInstance, DIRECTINPUT_VERSION, IID_IDirectInput8,
 		(void**)&directInput, nullptr);
 	assert(SUCCEEDED(result));
 
 	//キーボードデバイスの生成
-	IDirectInputDevice8* keyboard = nullptr;
-	result = directInput->CreateDevice(GUID_SysKeyboard, &keyboard, NULL);
-	assert(SUCCEEDED(result));
-
-	//入力データ形式のセット
-	result = keyboard->SetDataFormat(&c_dfDIKeyboard);
-	assert(SUCCEEDED(result));
-
-	//排他制御レベルのセット
-	result = keyboard->SetCooperativeLevel(
-		hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
-	assert(SUCCEEDED(result));
+	ADXKeyBoardInput keyboard(result, GUID_SysKeyboard,
+		&c_dfDIKeyboard, directInput,
+		 adxwindow.hwnd, DISCL_FOREGROUND | DISCL_NONEXCLUSIVE | DISCL_NOWINKEY);
 
 	//グラフィックボードのアダプタを列挙
 	result = CreateDXGIFactory(IID_PPV_ARGS(&dxgiFactory));
@@ -300,7 +267,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 	//スワップチェーンの生成
 	result = dxgiFactory->CreateSwapChainForHwnd(
-		commandQueue, hwnd, &swapChainDesc, nullptr, nullptr,
+		commandQueue, adxwindow.hwnd, &swapChainDesc, nullptr, nullptr,
 		(IDXGISwapChain1**)&swapChain);
 	assert(SUCCEEDED(result));
 
@@ -370,26 +337,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	rootParam.Descriptor.RegisterSpace = 0;
 	rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 	
-	//三角形
-	std::vector<Vertex> vertices = {
+	ADXModel model;
+	//頂点データ
+	model.vertices = {
 		{{-0.5f,-0.5f,0.0f},{0.0f,1.0f}},//左下
 		{{-0.5f,0.5f,0.0f},{0.0f,0.0f}},//左上
 		{{0.5f,-0.5f,0.0f},{1.0f,1.0f}},//右下
 		{{0.5f,0.5f,0.0f},{1.0f,0.0f}},//右上
 	};
-
-	//頂点バッファビュー作成
-	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(vertices, device, result) };
-
 	//インデックスデータ
-	std::vector <uint16_t> indices =
+	model.indices =
 	{
 		0,1,2,
 		1,2,3,
 	};
 
+	//頂点バッファビュー作成
+	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(model.vertices, device, result) };
+
 	//インデックスバッファビュー作成
-	D3D12_INDEX_BUFFER_VIEW ibView{ CreateIndexBufferView(indices, device, result) };
+	D3D12_INDEX_BUFFER_VIEW ibView{ CreateIndexBufferView(model.indices, device, result) };
 
 	ID3DBlob* vsBlob = nullptr;
 	ID3DBlob* psBlob = nullptr;
@@ -537,13 +504,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	assert(SUCCEEDED(result));
 
 	//キーボード情報の取得開始
-	keyboard->Acquire();
-
-	//全キーの入力状態を入れる変数
-	BYTE key[256] = {};
-
-	//前のフレームの入力状態を入れる変数
-	BYTE prevKey[256] = {};
+	keyboard.keyboard->Acquire();
 
 	//ゲームループ
 	while (true)
@@ -560,24 +521,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			break;
 		}
 
-		//前のフレームの入力状態を取得する
-		for (int i = 0; i < sizeof(key) / sizeof(*key); i++)
-		{
-			prevKey[i] = key[i];
-		}
-
-		//全キーの入力状態を取得する
-		keyboard->GetDeviceState(sizeof(key), key);
+		keyboard.Update();
 
 		//数字の0キーが押されていたら出力ウィンドウに「Hit 0」と表示
-		if (key[DIK_0])
+		if (keyboard.key[DIK_0])
 		{
 			OutputDebugStringA("Hit 0\n");
 		}
 
 		FLOAT clearColor[] = { 0.1f,0.25f,0.5f,0.0f };
-		//数字の0キーが押されていたら出力ウィンドウに「Hit 0」と表示
-		if (key[DIK_SPACE])
+		//スペースキーが押されていたら背景色を変える
+		if (keyboard.key[DIK_SPACE])
 		{
 			clearColor[0] = 0.5f;
 			clearColor[1] = 0.1f;
@@ -645,7 +599,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		commandList->SetGraphicsRootConstantBufferView(0, constBuffMaterial->GetGPUVirtualAddress());
 
 		// 描画コマンド
-		commandList->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0); // 全ての頂点を使って描画	
+		commandList->DrawIndexedInstanced(model.indices.size(), 1, 0, 0, 0); // 全ての頂点を使って描画	
 
 		//ここまで描画コマンドを書き込む
 
@@ -683,7 +637,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		assert(SUCCEEDED(result));
 	}
 
-	UnregisterClass(w.lpszClassName, w.hInstance);
+	UnregisterClass(adxwindow.w.lpszClassName, adxwindow.w.hInstance);
 
 	return 0;
 }
