@@ -366,10 +366,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		assert(SUCCEEDED(result));
 	}
 	constMapTransform->mat = XMMatrixIdentity();
+	/*
 	constMapTransform->mat.r[0].m128_f32[0] = 2.0f / window_width;
 	constMapTransform->mat.r[1].m128_f32[1] = -2.0f / window_height;
 	constMapTransform->mat.r[3].m128_f32[0] = -1.0f;
 	constMapTransform->mat.r[3].m128_f32[1] = 1.0f;
+	*/
+
+	//平行投影行列の計算
+	constMapTransform->mat = XMMatrixOrthographicOffCenterLH(
+		0, window_width,
+		window_height, 0,
+		0.0f, 1.0f);
+	//射影変換行列（透視投影）
+	XMMATRIX matProjection =
+	XMMatrixPerspectiveFovLH(
+		XMConvertToRadians(45.0f),//画角
+		(float)window_width / window_height,//アスペクト比
+		0.1f, 1000.0f);//ニア、ファークリップ
+
+	//ここでビュー変換行列（透視投影）の計算をする
+
+	//定数バッファに転送
+	constMapTransform->mat = matProjection;
 
 	//ルートパラメーターの設定
 	D3D12_ROOT_PARAMETER rootParam = {};
@@ -381,10 +400,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	ADXModel model;
 	//頂点データ
 	model.vertices = {
-		{{0.0f,100.0f,0.0f},{0.0f,1.0f}},//左下
-		{{0.0f,0.0f,0.0f},{0.0f,0.0f}},//左上
-		{{100.0f,100.0f,0.0f},{1.0f,1.0f}},//右下
-		{{100.0f,0.0f,0.0f},{1.0f,0.0f}},//右上
+		{{-50.0f,-50.0f,50.0f},{0.0f,1.0f}},//左下
+		{{-50.0f,50.0f,50.0f},{0.0f,0.0f}},//左上
+		{{50.0f,-50.0f,50.0f},{1.0f,1.0f}},//右下
+		{{50.0f,50.0f,50.0f},{1.0f,0.0f}},//右上
 	};
 	//インデックスデータ
 	model.indices =
