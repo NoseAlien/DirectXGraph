@@ -776,7 +776,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 			if (keyboard.key[DIK_D])
 			{
 				angle += XMConvertToRadians(1.0f);
-			}if (keyboard.key[DIK_A])
+			}
+			if (keyboard.key[DIK_A])
 			{
 				angle -= XMConvertToRadians(1.0f);
 			}
@@ -786,6 +787,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 			matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
 		}
+
+		if (keyboard.key[DIK_UP] || keyboard.key[DIK_DOWN] || keyboard.key[DIK_RIGHT] || keyboard.key[DIK_LEFT])
+		{
+			if (keyboard.key[DIK_UP])
+			{
+				worldTransform_.translation_.z += 1;
+			}
+			else if (keyboard.key[DIK_DOWN])
+			{
+				worldTransform_.translation_.z -= 1;
+			}
+			if (keyboard.key[DIK_RIGHT])
+			{
+				worldTransform_.translation_.x += 1;
+			}
+			else if (keyboard.key[DIK_LEFT])
+			{
+				worldTransform_.translation_.x -= 1;
+			}
+		}
+
+		worldTransform_.UpdateMatrix();
 
 		//定数バッファに転送
 		constMapTransform->mat = worldTransform_.matWorld_.ConvertToXMMatrix() * matView * matProjection;
