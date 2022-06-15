@@ -146,6 +146,9 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ADXKeyboardInput.cpp" />
     <ClCompile Include="ADXWindow.cpp" />
+    <ClCompile Include="ADXWorldTransform.cpp" />
+    <ClCompile Include="ADXMatrix4.cpp" />
+    <ClCompile Include="ADXVector3.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="BasicPS.hlsl">
@@ -168,6 +171,9 @@
     <ClInclude Include="ADXKeyboardInput.h" />
     <ClInclude Include="ADXModel.h" />
     <ClInclude Include="ADXWindow.h" />
+    <ClInclude Include="ADXWorldTransform.h" />
+    <ClInclude Include="ADXMatrix4.h" />
+    <ClInclude Include="ADXVector3.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="DirectXTex\DirectXTex_Desktop_2022.vcxproj">

@@ -10,6 +10,7 @@
 #include "ADXKeyBoardInput.h"
 #include "ADXModel.h"
 #include "ADXWindow.h"
+#include "ADXWorldTransform.h"
 #include <DirectXTex.h>
 
 #pragma comment(lib, "d3dcompiler.lib")
@@ -387,13 +388,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	//ビュー変換行列
 	XMMATRIX matView;
-	XMFLOAT3 eye(0, 100, -100);
+	XMFLOAT3 eye(0, 0, -100);
 	XMFLOAT3 target(0, 0, 0);
 	XMFLOAT3 up(0, 1, 0);
 	matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
 
+	//ワールド変換行列
+	ADXWorldTransform worldTransform_;
+	worldTransform_.Initialize();
+
+	worldTransform_.translation_ = { -50,0,0 };
+	worldTransform_.rotation_ = { XMConvertToRadians(15),XMConvertToRadians(30),0 };
+	worldTransform_.scale_ = { 1,0.5,1 };
+
+	worldTransform_.UpdateMatrix();
+
 	//定数バッファに転送
-	constMapTransform->mat = matView * matProjection;
+	constMapTransform->mat = worldTransform_.matWorld_.ConvertToXMMatrix() * matView * matProjection;
 
 	//ルートパラメーターの設定
 	D3D12_ROOT_PARAMETER rootParam = {};
@@ -777,7 +788,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		}
 
 		//定数バッファに転送
-		constMapTransform->mat = matView * matProjection;
+		constMapTransform->mat = worldTransform_.matWorld_.ConvertToXMMatrix() * matView * matProjection;
 
 		//DXの画面更新処理
 
