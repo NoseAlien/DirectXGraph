@@ -149,6 +149,8 @@
     <ClCompile Include="ADXWorldTransform.cpp" />
     <ClCompile Include="ADXMatrix4.cpp" />
     <ClCompile Include="ADXVector3.cpp" />
+    <ClCompile Include="ADXModel.cpp" />
+    <ClCompile Include="ADXObject.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="BasicPS.hlsl">
@@ -174,6 +176,7 @@
     <ClInclude Include="ADXWorldTransform.h" />
     <ClInclude Include="ADXMatrix4.h" />
     <ClInclude Include="ADXVector3.h" />
+    <ClInclude Include="ADXObject.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="DirectXTex\DirectXTex_Desktop_2022.vcxproj">

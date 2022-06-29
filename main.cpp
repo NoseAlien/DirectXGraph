@@ -11,6 +11,7 @@
 #include "ADXModel.h"
 #include "ADXWindow.h"
 #include "ADXWorldTransform.h"
+#include "ADXObject.h"
 #include <DirectXTex.h>
 
 #pragma comment(lib, "d3dcompiler.lib")
@@ -394,6 +395,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	XMFLOAT3 up(0, 1, 0);
 	matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
 
+	std::vector<ADXObject> Objects;
+
 	//ワールド変換行列
 	ADXWorldTransform worldTransform_;
 	worldTransform_.Initialize();
@@ -471,28 +474,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		21,22,23,
 	};
 
-	for (int i = 0; i < model.indices.size() / 3; i++)
-	{//三角形一つごとに計算していく
-		//三角形のインデックスを取り出して、一時的な変数に入れる
-		unsigned short index0 = model.indices[i * 3];
-		unsigned short index1 = model.indices[i * 3 + 1];
-		unsigned short index2 = model.indices[i * 3 + 2];
-		//三角形を構成する頂点座標をベクトルに代入
-		XMVECTOR p0 = XMLoadFloat3(&model.vertices[index0].pos);
-		XMVECTOR p1 = XMLoadFloat3(&model.vertices[index1].pos);
-		XMVECTOR p2 = XMLoadFloat3(&model.vertices[index2].pos);
-		//p0→p1ベクトル、p0→p2ベクトルを計算（ベクトルの減算）
-		XMVECTOR v1 = XMVectorSubtract(p1, p0);
-		XMVECTOR v2 = XMVectorSubtract(p2, p0);
-		//外積は両方から垂直なベクトル
-		XMVECTOR normal = XMVector3Cross(v1, v2);
-		//正規化
-		normal = XMVector3Normalize(normal);
-		//求めた法線を頂点データに代入
-		XMStoreFloat3(&model.vertices[index0].normal, normal);
-		XMStoreFloat3(&model.vertices[index1].normal, normal);
-		XMStoreFloat3(&model.vertices[index2].normal, normal);
-	}
+	//法線を自動設定
+	model.SetNormal();
 
 	//頂点バッファビュー作成
 	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(model.vertices, device, result) };
