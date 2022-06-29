@@ -12,6 +12,7 @@ public:
 	struct Vertex
 	{
 		XMFLOAT3 pos;
+		XMFLOAT3 normal;
 		XMFLOAT2 uv;
 	};
 
