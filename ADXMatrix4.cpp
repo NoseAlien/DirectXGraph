@@ -53,13 +53,21 @@ XMMATRIX ADXMatrix4::ConvertToXMMatrix()
 
 ADXMatrix4& ADXMatrix4::operator*=(const ADXMatrix4& m2)
 {
+	ADXMatrix4 m1;
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = 0; j < 4; j++)
+		{
+			m1.m[i][j] = m[i][j];
+		}
+	}
 
 	for (int i = 0; i < 4; i++)
 	{
 		for (int j = 0; j < 4; j++)
 		{
-			m[i][j] = m[i][0] * m2.m[0][j] + m[i][1] * m2.m[1][j]
-				+ m[i][2] * m2.m[2][j] + m[i][3] * m2.m[3][j];
+			m[i][j] = m1.m[i][0] * m2.m[0][j] + m1.m[i][1] * m2.m[1][j]
+				+ m1.m[i][2] * m2.m[2][j] + m1.m[i][3] * m2.m[3][j];
 		}
 	}
 	return *this;
