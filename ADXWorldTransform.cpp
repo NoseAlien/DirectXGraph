@@ -4,9 +4,10 @@
 void ADXWorldTransform::Initialize()
 {
 	matWorld_ = matWorld_.IdentityMatrix();
+
 }
 
-void ADXWorldTransform::UpdateMatrix()
+void ADXWorldTransform::UpdateMatrix(XMMATRIX matView, XMMATRIX matProjection)
 {
 	//////拡縮//////
 	//スケーリング倍率を行列に設定する
@@ -58,4 +59,8 @@ void ADXWorldTransform::UpdateMatrix()
 	matWorld_ *= matRot;
 	//平行移動行列を掛ける
 	matWorld_ *= matTrans;
+
+
+	//定数バッファに転送
+	constMapTransform->matWorld = matWorld_.ConvertToXMMatrix() * matView * matProjection;
 }

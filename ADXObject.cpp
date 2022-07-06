@@ -1,8 +1,9 @@
 #include "ADXObject.h"
 
-ADXObject::ADXObject()
+ADXObject::ADXObject(HRESULT result, ID3D12Device* device)
 {
 	transform.Initialize();
+	CreateConstBuffer(result, device);
 }
 
 ADXObject::~ADXObject()
@@ -31,9 +32,9 @@ void ADXObject::CreateConstBuffer(HRESULT result, ID3D12Device* device)
 		&cbResourceDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
-		IID_PPV_ARGS(&constBuffTransform));
+		IID_PPV_ARGS(&transform.constBuffTransform));
 	assert(SUCCEEDED(result));
 	//定数バッファのマッピング
-	result = constBuffTransform->Map(0, nullptr, (void**)&constMapTransform);//マッピング
+	result = transform.constBuffTransform->Map(0, nullptr, (void**)&transform.constMapTransform);//マッピング
 	assert(SUCCEEDED(result));
 }

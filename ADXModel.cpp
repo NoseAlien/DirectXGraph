@@ -26,3 +26,12 @@ void ADXModel::SetNormal()
 		XMStoreFloat3(&vertices[index2].normal, normal);
 	}
 }
+
+void ADXModel::Draw(ID3D12GraphicsCommandList* commandList,ADXWorldTransform wtf_)
+{
+	//定数バッファビュー(CBV)の設定コマンド
+	commandList->SetGraphicsRootConstantBufferView(2, wtf_.constBuffTransform->GetGPUVirtualAddress());
+
+	// 描画コマンド
+	commandList->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0); // 全ての頂点を使って描画	
+}

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <vector>
-#include <DirectXMath.h>
+#include <d3d12.h>
+#include "ADXWorldTransform.h"
 
 using namespace DirectX;
 
@@ -20,4 +21,5 @@ public:
 	std::vector <uint16_t> indices;
 
 	void SetNormal();
+	void Draw(ID3D12GraphicsCommandList* commandList, ADXWorldTransform wtf_);
 };

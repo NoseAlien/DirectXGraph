@@ -28,11 +28,6 @@ struct ConstBufferDataMaterial {
 	XMFLOAT4 color;
 };
 
-//定数バッファ用データ構造体（3D変換行列）
-struct ConstBufferDataTransform {
-	XMMATRIX mat;
-};
-
 ///<summary>
 ///頂点バッファビューを作成する処理を一括で行う
 ///</summary>
@@ -366,9 +361,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		//定数バッファのマッピング
 		result = constBuffTransform->Map(0, nullptr, (void**)&constMapTransform);//マッピング
 		assert(SUCCEEDED(result));
-	}	
+	}
 
-	constMapTransform->mat = XMMatrixIdentity();
+	ADXObject object_(result,device);
+	ADXObject staticObject_(result, device);
+
+
+	constMapTransform->matWorld = XMMatrixIdentity();
 	/*
 	constMapTransform->mat.r[0].m128_f32[0] = 2.0f / window_width;
 	constMapTransform->mat.r[1].m128_f32[1] = -2.0f / window_height;
@@ -377,7 +376,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	*/
 
 	//平行投影行列の計算
-	constMapTransform->mat = XMMatrixOrthographicOffCenterLH(
+	constMapTransform->matWorld = XMMatrixOrthographicOffCenterLH(
 		0, window_width,
 		window_height, 0,
 		0.0f, 1.0f);
@@ -398,17 +397,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	std::vector<ADXObject> Objects;
 
 	//ワールド変換行列
-	ADXWorldTransform worldTransform_;
-	worldTransform_.Initialize();
 
-	worldTransform_.translation_ = { -50,0,0 };
-	worldTransform_.rotation_ = { 0,0,0 };
-	worldTransform_.scale_ = { 1,1,1 };
+	object_.transform.translation_ = { -50,0,0 };
+	object_.transform.rotation_ = { 0,0,0 };
+	object_.transform.scale_ = { 1,1,1 };
+	object_.transform.UpdateMatrix(matView, matProjection);
 
-	worldTransform_.UpdateMatrix();
+	staticObject_.transform.translation_ = { 0,0,0 };
+	staticObject_.transform.rotation_ = { 0,0,0 };
+	staticObject_.transform.scale_ = { 1,1,1 };
+	staticObject_.transform.UpdateMatrix(matView, matProjection);
 
-	//定数バッファに転送
-	constMapTransform->mat = worldTransform_.matWorld_.ConvertToXMMatrix() * matView * matProjection;
 
 	//ルートパラメーターの設定
 	D3D12_ROOT_PARAMETER rootParam = {};
@@ -900,26 +899,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		{
 			if (keyboard.key[DIK_UP])
 			{
-				worldTransform_.translation_.z += 1;
+				object_.transform.translation_.z += 1;
 			}
 			else if (keyboard.key[DIK_DOWN])
 			{
-				worldTransform_.translation_.z -= 1;
+				object_.transform.translation_.z -= 1;
 			}
 			if (keyboard.key[DIK_RIGHT])
 			{
-				worldTransform_.translation_.x += 1;
+				object_.transform.translation_.x += 1;
 			}
 			else if (keyboard.key[DIK_LEFT])
 			{
-				worldTransform_.translation_.x -= 1;
+				object_.transform.translation_.x -= 1;
 			}
 		}
+		object_.transform.UpdateMatrix(matView, matProjection);
 
-		worldTransform_.UpdateMatrix();
-
-		//定数バッファに転送
-		constMapTransform->mat = worldTransform_.matWorld_.ConvertToXMMatrix() * matView * matProjection;
+		staticObject_.transform.rotation_.y += 0.01f;
+		staticObject_.transform.UpdateMatrix(matView, matProjection);
 
 		//DXの画面更新処理
 
@@ -988,11 +986,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle = srvHeap->GetGPUDescriptorHandleForHeapStart();
 		//SRVヒープの先頭にあるSRVをルートパラメーター1番に設定
 		commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
-		//定数バッファビュー(CBV)の設定コマンド
-		commandList->SetGraphicsRootConstantBufferView(2, constBuffTransform->GetGPUVirtualAddress());
 
-		// 描画コマンド
-		commandList->DrawIndexedInstanced(model.indices.size(), 1, 0, 0, 0); // 全ての頂点を使って描画	
+		//オブジェクトの描画
+		model.Draw(commandList,object_.transform);
+		model.Draw(commandList, staticObject_.transform);
 
 		//ここまで描画コマンドを書き込む
 
