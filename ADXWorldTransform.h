@@ -25,6 +25,10 @@ struct ADXWorldTransform {
 	ADXVector3 translation_ = { 0, 0, 0 };
 	// ローカル → ワールド変換行列
 	ADXMatrix4 matWorld_;
+	// 回転情報のみのローカル → ワールド変換行列
+	ADXMatrix4 matWorldRot_;
+	// 親となるワールド変換へのポインタ
+	ADXWorldTransform* parent_ = nullptr;
 
 	/// <summary>
 	/// 初期化

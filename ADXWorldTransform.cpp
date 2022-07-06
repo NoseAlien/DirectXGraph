@@ -60,6 +60,14 @@ void ADXWorldTransform::UpdateMatrix(XMMATRIX matView, XMMATRIX matProjection)
 	//•½sˆÚ“®s—ñ‚ðŠ|‚¯‚é
 	matWorld_ *= matTrans;
 
+	matWorldRot_ = matWorld_.IdentityMatrix(); // ƒ[ƒ‹ƒh‰ñ“]s—ñ‚Ì•ÏŒ`‚àƒŠƒZƒbƒg
+	matWorldRot_ *= matRot; // ƒ[ƒ‹ƒh‰ñ“]s—ñ‚É‰ñ“]‚ð”½‰f
+
+	if (parent_ != nullptr)
+	{
+		matWorld_ *= parent_->matWorld_;//e‚Ìs—ñ‚ðŠ|‚¯ŽZ‚·‚é
+		matWorldRot_ *= parent_->matWorldRot_;//e‚Ì‰ñ“]s—ñ‚àŠ|‚¯ŽZ‚·‚é
+	}
 
 	//’è”ƒoƒbƒtƒ@‚É“]‘—
 	constMapTransform->matWorld = matWorld_.ConvertToXMMatrix() * matView * matProjection;
