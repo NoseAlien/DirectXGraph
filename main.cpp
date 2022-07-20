@@ -12,6 +12,7 @@
 #include "ADXWindow.h"
 #include "ADXWorldTransform.h"
 #include "ADXObject.h"
+#include "ADXImage.h"
 #include <DirectXTex.h>
 
 #pragma comment(lib, "d3dcompiler.lib")
@@ -27,109 +28,6 @@ using namespace DirectX;
 struct ConstBufferDataMaterial {
 	XMFLOAT4 color;
 };
-
-///<summary>
-///頂点バッファビューを作成する処理を一括で行う
-///</summary>
-D3D12_VERTEX_BUFFER_VIEW CreateVertexBufferView(std::vector<ADXModel::Vertex> vertices ,ID3D12Device* device, HRESULT& result)
-{
-	//頂点データ全体のサイズ = 一つの頂点データのサイズ * 頂点データの要素数
-	UINT sizeVB = static_cast<UINT>(sizeof(vertices[0]) * vertices.size());
-	//頂点バッファの設定
-	D3D12_HEAP_PROPERTIES heapProp{};
-	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
-	//リソース設定
-	D3D12_RESOURCE_DESC resDesc{};
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resDesc.Width = sizeVB;
-	resDesc.Height = 1;
-	resDesc.DepthOrArraySize = 1;
-	resDesc.MipLevels = 1;
-	resDesc.SampleDesc.Count = 1;
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	//頂点バッファの生成
-	ID3D12Resource* vertBuff = nullptr;
-	result = device->CreateCommittedResource(
-		&heapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&resDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&vertBuff));
-	assert(SUCCEEDED(result));
-
-	//GPU上のバッファに対応した仮想メモリ（メインメモリ上）を取得
-	ADXModel::Vertex* vertMap = nullptr;
-	result = vertBuff->Map(0, nullptr, (void**)&vertMap);
-	assert(SUCCEEDED(result));
-	//全頂点に対し座標をコピー
-	for (int i = 0; i < vertices.size(); i++)
-	{
-		vertMap[i] = vertices[i];
-	}
-	//つながりを削除
-	vertBuff->Unmap(0, nullptr);
-
-	//頂点バッファビューの作成
-	D3D12_VERTEX_BUFFER_VIEW vbView{};
-	//GPU仮想アドレス
-	vbView.BufferLocation = vertBuff->GetGPUVirtualAddress();
-	//頂点バッファのサイズ
-	vbView.SizeInBytes = sizeVB;
-	//頂点一つ分のデータサイズ
-	vbView.StrideInBytes = sizeof(vertices[0]);
-
-	return vbView;
-}
-
-///<summary>
-///インデックスバッファビューを作成する処理を一括で行う
-///</summary>
-D3D12_INDEX_BUFFER_VIEW CreateIndexBufferView(std::vector<uint16_t> indices, ID3D12Device* device, HRESULT& result)
-{
-	//インデックスデータ全体のサイズ
-	UINT sizeIB = static_cast<UINT>(sizeof(uint16_t) * indices.size());
-	//インデックスバッファの設定
-	D3D12_HEAP_PROPERTIES heapProp{};
-	heapProp.Type = D3D12_HEAP_TYPE_UPLOAD;
-	//リソース設定
-	D3D12_RESOURCE_DESC resDesc{};
-	resDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	resDesc.Width = sizeIB;
-	resDesc.Height = 1;
-	resDesc.DepthOrArraySize = 1;
-	resDesc.MipLevels = 1;
-	resDesc.SampleDesc.Count = 1;
-	resDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	//インデックスバッファの生成
-	ID3D12Resource* indexBuff = nullptr;
-	result = device->CreateCommittedResource(
-		&heapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&resDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&indexBuff));
-
-	//インデックスバッファをマッピング
-	uint16_t* indexMap = nullptr;
-	result = indexBuff->Map(0, nullptr, (void**)&indexMap);
-	//全インデックスに対しインデックスをコピー
-	for (int i = 0; i < indices.size(); i++)
-	{
-		indexMap[i] = indices[i];
-	}
-	//つながりを削除
-	indexBuff->Unmap(0, nullptr);
-
-	//インデックスバッファビューの作成
-	D3D12_INDEX_BUFFER_VIEW ibView{};
-	ibView.BufferLocation = indexBuff->GetGPUVirtualAddress();
-	ibView.Format = DXGI_FORMAT_R16_UINT;
-	ibView.SizeInBytes = sizeIB;
-
-	return ibView;
-}
 
 LRESULT windowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
@@ -158,10 +56,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 #ifdef _DEBUG
 	//デバッグレイヤー有効化
-	ID3D12Debug* debugController;
+	ID3D12Debug1* debugController;
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
 	{
 		debugController->EnableDebugLayer();
+		debugController->SetEnableGPUBasedValidation(TRUE);
 	}
 #endif
 
@@ -363,10 +262,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		assert(SUCCEEDED(result));
 	}
 
-	ADXObject object_(result,device);
-	ADXObject staticObject_(result, device);
-
-
 	constMapTransform->matWorld = XMMatrixIdentity();
 	/*
 	constMapTransform->mat.r[0].m128_f32[0] = 2.0f / window_width;
@@ -382,105 +277,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		0.0f, 1.0f);
 	//射影変換行列（透視投影）
 	XMMATRIX matProjection =
-	XMMatrixPerspectiveFovLH(
-		XMConvertToRadians(45.0f),//画角
-		(float)window_width / window_height,//アスペクト比
-		0.1f, 1000.0f);//ニア、ファークリップ
+		XMMatrixPerspectiveFovLH(
+			XMConvertToRadians(45.0f),//画角
+			(float)window_width / window_height,//アスペクト比
+			0.1f, 1000.0f);//ニア、ファークリップ
 
-	//ビュー変換行列
-	XMMATRIX matView;
-	XMFLOAT3 eye(0, 0, -100);
-	XMFLOAT3 target(0, 0, 0);
-	XMFLOAT3 up(0, 1, 0);
-	matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
-
-	std::vector<ADXObject> Objects;
-
-	//ワールド変換行列
-
-	object_.transform.translation_ = { -50,0,0 };
-	object_.transform.rotation_ = { 0,0,0 };
-	object_.transform.scale_ = { 1,1,1 };
-	object_.transform.UpdateMatrix(matView, matProjection);
-
-	staticObject_.transform.translation_ = { 0,0,0 };
-	staticObject_.transform.rotation_ = { 0,0,0 };
-	staticObject_.transform.scale_ = { 1,1,1 };
-	staticObject_.transform.UpdateMatrix(matView, matProjection);
-
-
-	//ルートパラメーターの設定
+		//ルートパラメーターの設定
 	D3D12_ROOT_PARAMETER rootParam = {};
 	rootParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
 	rootParam.Descriptor.ShaderRegister = 0;
 	rootParam.Descriptor.RegisterSpace = 0;
 	rootParam.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-	ADXModel model;
-	//頂点データ
-	model.vertices = {
-		//前
-		{{-5.0f,-5.0f,-5.0f},{}, {0.0f,1.0f}},//左下
-		{{-5.0f,5.0f,-5.0f},{},{0.0f,0.0f}},//左上
-		{{5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//右下
-		{{5.0f,5.0f,-5.0f},{},{1.0f,0.0f}},//右上
-		//後
-		{{-5.0f,-5.0f,5.0f},{},{1.0f,1.0f}},//左下
-		{{-5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//左上
-		{{5.0f,-5.0f,5.0f},{},{0.0f,1.0f}},//右下
-		{{5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
-		//左
-		{{-5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//左下
-		{{-5.0f,-5.0f,5.0f},{},{0.0f,1.0f}},//左上
-		{{-5.0f,5.0f,-5.0f},{},{1.0f,0.0f}},//右下
-		{{-5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
-		//右
-		{{5.0f,-5.0f,-5.0f},{},{0.0f,1.0f}},//左下
-		{{5.0f,-5.0f,5.0f},{},{1.0f,1.0f}},//左上
-		{{5.0f,5.0f,-5.0f},{},{0.0f,0.0f}},//右下
-		{{5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//右上
-		//下
-		{{5.0f,-5.0f,-5.0f},{},{0.0f,1.0f}},//左下
-		{{5.0f,-5.0f,5.0f},{},{0.0f,0.0f}},//左上
-		{{-5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//右下
-		{{-5.0f,-5.0f,5.0f},{},{1.0f,0.0f}},//右上
-		//上
-		{{5.0f,5.0f,-5.0f},{},{1.0f,1.0f}},//左下
-		{{5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//左上
-		{{-5.0f,5.0f,-5.0f},{},{0.0f,1.0f}},//右下
-		{{-5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
-	};
-	//インデックスデータ
-	model.indices =
-	{
-		//前
-		0,1,2,
-		2,1,3,
-		//後
-		5,4,6,
-		5,6,7,
-		//左
-		8,9,10,
-		10,9,11,
-		//右
-		13,12,14,
-		13,14,15,
-		//下
-		16,17,18,
-		18,17,19,
-		//上
-		21,20,22,
-		21,22,23,
-	};
-
-	//法線を自動設定
-	model.SetNormal();
-
-	//頂点バッファビュー作成
-	D3D12_VERTEX_BUFFER_VIEW vbView{ CreateVertexBufferView(model.vertices, device, result) };
-
-	//インデックスバッファビュー作成
-	D3D12_INDEX_BUFFER_VIEW ibView{ CreateIndexBufferView(model.indices, device, result) };
 
 	ID3DBlob* vsBlob = nullptr;
 	ID3DBlob* psBlob = nullptr;
@@ -661,133 +468,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	pipelineDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL; //書き込み許可
 	pipelineDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS; //小さければ合格
 	pipelineDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	
-
-	//1枚目の画像
-	TexMetadata metadata{};
-	ScratchImage scratchImg{};
-	//WICテクスチャのロード
-	result = LoadFromWICFile(
-		L"Resources/napnose.png",
-		WIC_FLAGS_NONE,
-		&metadata, scratchImg);
-
-	ScratchImage mipChain{};
-	//ミップマップ生成
-	result = GenerateMipMaps(
-		scratchImg.GetImages(), scratchImg.GetImageCount(), scratchImg.GetMetadata(),
-		TEX_FILTER_DEFAULT, 0, mipChain);
-	if (SUCCEEDED(result))
-	{
-		scratchImg = std::move(mipChain);
-		metadata = scratchImg.GetMetadata();
-	}
-	//読み込んだディフューズテクスチャをSRGBとして扱う
-	metadata.format = MakeSRGB(metadata.format);
-
-	//ヒープ設定
-	D3D12_HEAP_PROPERTIES textureHeapProp{};
-	textureHeapProp.Type = D3D12_HEAP_TYPE_CUSTOM;
-	textureHeapProp.CPUPageProperty =
-		D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-	textureHeapProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
-	//リソース設定
-	D3D12_RESOURCE_DESC textureResourceDesc{};
-	textureResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	textureResourceDesc.Format = metadata.format;
-	textureResourceDesc.Width = metadata.width;
-	textureResourceDesc.Height = (UINT)metadata.height;
-	textureResourceDesc.DepthOrArraySize = (UINT16)metadata.arraySize;
-	textureResourceDesc.MipLevels = (UINT16)metadata.mipLevels;
-	textureResourceDesc.SampleDesc.Count = 1;
-
-	//テクスチャバッファの生成
-	ID3D12Resource* texBuff = nullptr;
-	result = device->CreateCommittedResource(
-		&textureHeapProp,
-		D3D12_HEAP_FLAG_NONE,
-		&textureResourceDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&texBuff));
-	//全ミップマップについて
-	for (size_t i = 0; i < metadata.mipLevels; i++)
-	{
-		//ミップマップレベルを指定してイメージを取得
-		const Image* img = scratchImg.GetImage(i, 0, 0);
-		//テクスチャバッファにデータ転送
-		result = texBuff->WriteToSubresource(
-			(UINT)i,
-			nullptr,//全領域へコピー
-			img->pixels,//元データアドレス
-			(UINT)img->rowPitch,//1ラインサイズ
-			(UINT)img->slicePitch//全サイズ
-		);
-		assert(SUCCEEDED(result));
-	}
-
-	//2枚目の画像
-	TexMetadata metadata2{};
-	ScratchImage scratchImg2{};
-	//WICテクスチャのロード
-	result = LoadFromWICFile(
-		L"Resources/MEGNOSE.png",
-		WIC_FLAGS_NONE,
-		&metadata2, scratchImg2);
-
-	ScratchImage mipChain2{};
-	//ミップマップ生成
-	result = GenerateMipMaps(
-		scratchImg2.GetImages(), scratchImg2.GetImageCount(), scratchImg2.GetMetadata(),
-		TEX_FILTER_DEFAULT, 0, mipChain2);
-	if (SUCCEEDED(result))
-	{
-		scratchImg2 = std::move(mipChain2);
-		metadata2 = scratchImg2.GetMetadata();
-	}
-	//読み込んだディフューズテクスチャをSRGBとして扱う
-	metadata2.format = MakeSRGB(metadata2.format);
-
-	//ヒープ設定
-	D3D12_HEAP_PROPERTIES textureHeapProp2{};
-	textureHeapProp2.Type = D3D12_HEAP_TYPE_CUSTOM;
-	textureHeapProp2.CPUPageProperty =
-		D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
-	textureHeapProp2.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
-	//リソース設定
-	D3D12_RESOURCE_DESC textureResourceDesc2{};
-	textureResourceDesc2.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	textureResourceDesc2.Format = metadata2.format;
-	textureResourceDesc2.Width = metadata2.width;
-	textureResourceDesc2.Height = (UINT)metadata2.height;
-	textureResourceDesc2.DepthOrArraySize = (UINT16)metadata2.arraySize;
-	textureResourceDesc2.MipLevels = (UINT16)metadata2.mipLevels;
-	textureResourceDesc2.SampleDesc.Count = 1;
-
-	//テクスチャバッファの生成
-	ID3D12Resource* texBuff2 = nullptr;
-	result = device->CreateCommittedResource(
-		&textureHeapProp2,
-		D3D12_HEAP_FLAG_NONE,
-		&textureResourceDesc2,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&texBuff2));
-	//全ミップマップについて
-	for (size_t i = 0; i < metadata2.mipLevels; i++)
-	{
-		//ミップマップレベルを指定してイメージを取得
-		const Image* img = scratchImg2.GetImage(i, 0, 0);
-		//テクスチャバッファにデータ転送
-		result = texBuff2->WriteToSubresource(
-			(UINT)i,
-			nullptr,//全領域へコピー
-			img->pixels,//元データアドレス
-			(UINT)img->rowPitch,//1ラインサイズ
-			(UINT)img->slicePitch//全サイズ
-		);
-		assert(SUCCEEDED(result));
-	}
 
 
 	//シェーダーリソースビューの最大個数
@@ -802,38 +482,22 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&srvHeap));
 	assert(SUCCEEDED(result));
 
-
 	//SRVヒープの先頭ハンドルを取得
 	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = srvHeap->GetCPUDescriptorHandleForHeapStart();
-
-	//シェーダーリソースビュー設定
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};//設定構造体
-	srvDesc.Format = textureResourceDesc.Format;//RGBA float
-	srvDesc.Shader4ComponentMapping =
-		D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;//2Dテクスチャ
-	srvDesc.Texture2D.MipLevels = textureResourceDesc.MipLevels;
-
-	//ハンドルの指す位置にシェーダーリソースビュー作成
-	device->CreateShaderResourceView(texBuff, &srvDesc, srvHandle);
-
 
 	//デスクリプタのサイズ
 	//ドライバによって違うので関数で取得しなければならない
 	UINT incrementSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	//一つハンドルを進める
-	srvHandle.ptr += incrementSize;
 
-	//シェーダーリソースビュー設定
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};//設定構造体
-	srvDesc2.Format = textureResourceDesc2.Format;//RGBA float
-	srvDesc2.Shader4ComponentMapping =
-		D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;//2Dテクスチャ
-	srvDesc2.Texture2D.MipLevels = textureResourceDesc2.MipLevels;
 
-	//ハンドルの指す位置にシェーダーリソースビュー作成
-	device->CreateShaderResourceView(texBuff2, &srvDesc2, srvHandle);
+	//1枚目の画像
+	ADXImage(L"Resources/napnose.png", srvHandle, device, result, incrementSize);
+
+	//2枚目の画像
+	ADXImage(L"Resources/MEGNOSE.png", srvHandle, device, result, incrementSize);
+
+	//3枚目の画像
+	ADXImage(L"Resources/whiteDot.png", srvHandle, device, result, incrementSize);
 
 
 	//デスクリプタレンジの設定
@@ -899,7 +563,124 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	result = device->CreateGraphicsPipelineState(&pipelineDesc, IID_PPV_ARGS(&pipelineState));
 	assert(SUCCEEDED(result));
 
+
+	ADXModel model;
+	//頂点データ
+	model.vertices = {
+		//前
+		{{-5.0f,-5.0f,-5.0f},{}, {0.0f,1.0f}},//左下
+		{{-5.0f,5.0f,-5.0f},{},{0.0f,0.0f}},//左上
+		{{5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//右下
+		{{5.0f,5.0f,-5.0f},{},{1.0f,0.0f}},//右上
+		//後
+		{{-5.0f,-5.0f,5.0f},{},{1.0f,1.0f}},//左下
+		{{-5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//左上
+		{{5.0f,-5.0f,5.0f},{},{0.0f,1.0f}},//右下
+		{{5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
+		//左
+		{{-5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//左下
+		{{-5.0f,-5.0f,5.0f},{},{0.0f,1.0f}},//左上
+		{{-5.0f,5.0f,-5.0f},{},{1.0f,0.0f}},//右下
+		{{-5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
+		//右
+		{{5.0f,-5.0f,-5.0f},{},{0.0f,1.0f}},//左下
+		{{5.0f,-5.0f,5.0f},{},{1.0f,1.0f}},//左上
+		{{5.0f,5.0f,-5.0f},{},{0.0f,0.0f}},//右下
+		{{5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//右上
+		//下
+		{{5.0f,-5.0f,-5.0f},{},{0.0f,1.0f}},//左下
+		{{5.0f,-5.0f,5.0f},{},{0.0f,0.0f}},//左上
+		{{-5.0f,-5.0f,-5.0f},{},{1.0f,1.0f}},//右下
+		{{-5.0f,-5.0f,5.0f},{},{1.0f,0.0f}},//右上
+		//上
+		{{5.0f,5.0f,-5.0f},{},{1.0f,1.0f}},//左下
+		{{5.0f,5.0f,5.0f},{},{1.0f,0.0f}},//左上
+		{{-5.0f,5.0f,-5.0f},{},{0.0f,1.0f}},//右下
+		{{-5.0f,5.0f,5.0f},{},{0.0f,0.0f}},//右上
+	};
+	//インデックスデータ
+	model.indices =
+	{
+		//前
+		0,1,2,
+		2,1,3,
+		//後
+		5,4,6,
+		5,6,7,
+		//左
+		8,9,10,
+		10,9,11,
+		//右
+		13,12,14,
+		13,14,15,
+		//下
+		16,17,18,
+		18,17,19,
+		//上
+		21,20,22,
+		21,22,23,
+	};
+	model.Initialize(device, result);
+
+	ADXModel tri;
+	tri.vertices = {
+		{{-5.0f,-5.0f,0.0f},{}, {0.0f,1.0f}},//左下
+		{{-5.0f,5.0f,0.0f},{},{0.0f,0.0f}},//左上
+		{{5.0f,-5.0f,0.0f},{},{1.0f,1.0f}},//右下
+	};
+	//インデックスデータ
+	tri.indices =
+	{
+		0,1,2,
+	};
+	tri.Initialize(device, result);
+
+	ADXModel rect;
+	//頂点データ
+	rect.vertices = {
+		{{-5.0f,-5.0f,0.0f},{}, {0.0f,1.0f}},//左下
+		{{-5.0f,5.0f,0.0f},{},{0.0f,0.0f}},//左上
+		{{5.0f,-5.0f,0.0f},{},{1.0f,1.0f}},//右下
+		{{5.0f,5.0f,0.0f},{},{1.0f,0.0f}},//右上
+	};
+	//インデックスデータ
+	rect.indices =
+	{
+		0,1,2,
+		2,1,3,
+	};
+	rect.Initialize(device, result);
+
+	//ビュー変換行列
+	XMMATRIX matView;
+	XMFLOAT3 eye(0, 0, -100);
+	XMFLOAT3 target(0, 0, 0);
+	XMFLOAT3 up(0, 1, 0);
+	matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
+
+	//ワールド変換行列
+
+	ADXObject object_(result, device);
+	object_.transform.translation_ = { -50,0,0 };
+	object_.transform.rotation_ = { 0,0,0 };
+	object_.transform.scale_ = { 1,1,1 };
+	object_.transform.UpdateMatrix(matView, matProjection);
+
+	ADXObject staticObject_(result, device);
+	staticObject_.transform.translation_ = { 50,0,0 };
+	staticObject_.transform.rotation_ = { 0,0,0 };
+	staticObject_.transform.scale_ = { 1,1,1 };
+	staticObject_.transform.UpdateMatrix(matView, matProjection);
+
+	ADXObject triObject_(result, device);
+	triObject_.transform.translation_ = { 0,0,0 };
+	triObject_.transform.rotation_ = { 0,0,0 };
+	triObject_.transform.scale_ = { 1,1,1 };
+	triObject_.transform.UpdateMatrix(matView, matProjection);
+
 	float angle = 0.0f;
+
+	float hue = 0.0f;
 
 	//キーボード情報の取得開始
 	keyboard.keyboard->Acquire();
@@ -928,55 +709,82 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		}
 
 		FLOAT clearColor[] = { 0.1f,0.25f,0.5f,0.0f };
-		//スペースキーが押されていたら背景色を変える
-		if (keyboard.key[DIK_SPACE])
-		{
-			clearColor[0] = 0.5f;
-			clearColor[1] = 0.1f;
-			clearColor[2] = 0.25f;
-			clearColor[3] = 0.0f;
-		}
 
-		if (keyboard.key[DIK_D] || keyboard.key[DIK_A])
+		if (keyboard.key[DIK_Q] || keyboard.key[DIK_E])
 		{
+			if (keyboard.key[DIK_Q])
+			{
+				angle += XMConvertToRadians(0.5f);
+			}
+			if (keyboard.key[DIK_E])
+			{
+				angle -= XMConvertToRadians(0.5f);
+			}
+
+		}
+		if (keyboard.key[DIK_W] || keyboard.key[DIK_S] || keyboard.key[DIK_D] || keyboard.key[DIK_A])
+		{
+			if (keyboard.key[DIK_W])
+			{
+				eye.z += 1;
+			}
+			else if (keyboard.key[DIK_S])
+			{
+				eye.z -= 1;
+			}
 			if (keyboard.key[DIK_D])
 			{
-				angle += XMConvertToRadians(1.0f);
+				eye.x += 1;
 			}
-			if (keyboard.key[DIK_A])
+			else if (keyboard.key[DIK_A])
 			{
-				angle -= XMConvertToRadians(1.0f);
+				eye.x -= 1;
 			}
-
-			eye.x = -100 * sinf(angle);
-			eye.z = -100 * cosf(angle);
-
-			matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
 		}
+		target = { eye.x - 100 * sinf(angle), eye.y, eye.z + 100 * cosf(angle) };
+		matView = XMMatrixLookAtLH(XMLoadFloat3(&eye), XMLoadFloat3(&target), XMLoadFloat3(&up));
+
 
 		if (keyboard.key[DIK_UP] || keyboard.key[DIK_DOWN] || keyboard.key[DIK_RIGHT] || keyboard.key[DIK_LEFT])
 		{
 			if (keyboard.key[DIK_UP])
 			{
-				object_.transform.translation_.y += 1;
+				object_.transform.translation_.y += 0.5;
 			}
-			else if (keyboard.key[DIK_DOWN])
+			if (keyboard.key[DIK_DOWN])
 			{
-				object_.transform.translation_.y -= 1;
+				object_.transform.translation_.y -= 0.5;
 			}
 			if (keyboard.key[DIK_RIGHT])
 			{
-				object_.transform.translation_.x += 1;
+				object_.transform.translation_.x += 0.5;
 			}
-			else if (keyboard.key[DIK_LEFT])
+			if (keyboard.key[DIK_LEFT])
 			{
-				object_.transform.translation_.x -= 1;
+				object_.transform.translation_.x -= 0.5;
+			}
+		}
+		if (keyboard.key[DIK_I] || keyboard.key[DIK_O] || keyboard.key[DIK_P])
+		{
+			if (keyboard.key[DIK_I])
+			{
+				object_.transform.rotation_.x += 0.01;
+			}
+			if (keyboard.key[DIK_O])
+			{
+				object_.transform.rotation_.y += 0.01;
+			}
+			if (keyboard.key[DIK_P])
+			{
+				object_.transform.rotation_.z += 0.01;
 			}
 		}
 		object_.transform.UpdateMatrix(matView, matProjection);
 
 		staticObject_.transform.rotation_.z += 0.01f;
 		staticObject_.transform.UpdateMatrix(matView, matProjection);
+
+		triObject_.transform.UpdateMatrix(matView, matProjection);
 
 		//DXの画面更新処理
 
@@ -1032,10 +840,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // 三角形リスト
 
 		// 頂点バッファビューの設定コマンド
-		commandList->IASetVertexBuffers(0, 1, &vbView);
+		commandList->IASetVertexBuffers(0, 1, &model.vbView);
 
 		// インデックスバッファビューの設定コマンド
-		commandList->IASetIndexBuffer(&ibView);
+		commandList->IASetIndexBuffer(&model.ibView);
 
 		//定数バッファビュー(CBV)の設定コマンド
 		commandList->SetGraphicsRootConstantBufferView(0, constBuffMaterial->GetGPUVirtualAddress());
@@ -1044,18 +852,57 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		//SRVヒープの先頭ハンドルを取得(SRVを指しているはず)
 		D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle = srvHeap->GetGPUDescriptorHandleForHeapStart();
 		//SRVヒープの先頭にあるSRVをルートパラメーター1番に設定
-		//commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+		commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+
+		hue += 0.5;
+		if (hue < 60)
+		{
+			constMapMaterial->color = XMFLOAT4(1, hue / 60, 0, 1);
+		}
+		else if (hue < 120)
+		{
+			constMapMaterial->color = XMFLOAT4((120 - hue) / 60, 1, 0, 1);
+		}
+		else if (hue < 180)
+		{
+			constMapMaterial->color = XMFLOAT4(0, 1, (hue - 120) / 60, 1);
+		}
+		else if (hue < 240)
+		{
+			constMapMaterial->color = XMFLOAT4(0, (240 - hue) / 60, 1, 1);
+		}
+		else if (hue < 300)
+		{
+			constMapMaterial->color = XMFLOAT4((hue - 240) / 60, 0, 1, 1);
+		}
+		else if (hue < 360)
+		{
+			constMapMaterial->color = XMFLOAT4(1, 0, (360 - hue) / 60, 1);
+		}
+		else
+		{
+			hue = 0;
+		}
 
 		if (keyboard.key[DIK_SPACE])
 		{
-			//2枚目を指し示すようにSRVのハンドルをルートパラメーター1番に設定
-			srvGpuHandle.ptr += incrementSize;
+			constMapMaterial->color.w = 0.5;
 		}
-		commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
 
 		//オブジェクトの描画
 		model.Draw(commandList,object_.transform);
-		model.Draw(commandList, staticObject_.transform);
+
+		srvGpuHandle.ptr += incrementSize;
+		commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+
+		//オブジェクトの描画
+		rect.Draw(commandList, staticObject_.transform);
+
+		srvGpuHandle.ptr += incrementSize;
+		commandList->SetGraphicsRootDescriptorTable(1, srvGpuHandle);
+
+		//オブジェクトの描画
+		tri.Draw(commandList, triObject_.transform);
 
 		//ここまで描画コマンドを書き込む
 
